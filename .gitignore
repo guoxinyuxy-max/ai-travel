@@ -1,0 +1,19 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+*.log
+
+# 本地工作记录与应用发布元数据，不进入公开仓库
+.workbuddy/
+.wbapp_*.genie
+
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

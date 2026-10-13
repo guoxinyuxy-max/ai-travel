@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>AI旅行拍照助手</title>
+    <script>
+      /*
+       * 部署自愈：重新发布后资源文件名会变，浏览器若缓存了旧版 HTML，
+       * 会去请求已被清理的旧 JS/CSS 从而白屏。这里监听资源加载失败，
+       * 自动带一个新参数重新加载，强制绕过 HTML 缓存拿到最新资源。
+       * 每个会话最多自愈一次，避免真的资源缺失时无限刷新。
+       */
+      (function () {
+        try {
+          var KEY = 'wb_asset_selfheal'
+          if (sessionStorage.getItem(KEY)) return
+          window.addEventListener(
+            'error',
+            function (e) {
+              var el = e && e.target
+              var tag = el && el.tagName
+              if (tag !== 'SCRIPT' && tag !== 'LINK') return
+              sessionStorage.setItem(KEY, '1')
+              var url = new URL(location.href)
+              url.searchParams.set('_r', Date.now().toString(36))
+              location.replace(url.toString())
+            },
+            true,
+          )
+        } catch (_) {
+          /* 忽略：不影响正常加载 */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
