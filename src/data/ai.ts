@@ -44,7 +44,7 @@ const SYSTEM_PROMPT = `你是一位面向普通旅行者的 AI 拍摄指导，�
 必须输出一个 JSON 对象，字段如下：
 {
   "status": "ok" 或 "needs_new_photo",
-  "reason": "仅当 status=needs_new_photo 时提供，枚举：blurry | selfie_only | too_close | not_travel_scene | no_environment",
+  "reason": "仅当 status=needs_new_photo 时提供，枚举：blurry | selfie_only | too_close | not_travel_scene | no_environment | aerial_view",
   "confidence": "high | medium | low，反映本次站位与构图判断的可信度",
   "risk_level": "high | medium | low | none，反映你推荐的站位区域本身的人身安全风险（落水/坠落/交通）",
   "zone": { "x": 数字, "y": 数字, "w": 数字, "h": 数字 },
@@ -67,7 +67,9 @@ const SYSTEM_PROMPT = `你是一位面向普通旅行者的 AI 拍摄指导，�
   - selfie_only：纯人物自拍、几乎没有环境；
   - too_close：背景范围过小（近距离特写）；
   - not_travel_scene：内容与旅行拍摄无关（室内物品、宠物等）；
-  - no_environment：画面几乎完全被天空、云层、纯色墙面或大面积水面占据，找不到任何可站立参照物。
+  - no_environment：画面几乎完全被天空、云层、纯色墙面或大面积水面占据，找不到任何可站立参照物；
+  - aerial_view：航拍、无人机俯瞰、上帝视角等"拍摄空中/纯风景"的照片，画面中不存在人物实际可站立并进入画面的地面。
+- 重要：只有天空、云海、海面、远景而没有道路、地面、平台的纯风景照，不是"人在景点前"的拍摄场景，必须返回 needs_new_photo（aerial_view 或 no_environment），禁止为这类照片编造站位。
 - 照片本身清晰完整、只是场景需要小心时（水边、街道、人多、有台阶），status 仍为 "ok"，用 notices 提醒注意，不要判 needs_new_photo。
 - confidence 判定：低光、逆光、镜面反光、严重遮挡、空间结构不清晰、地面特征不明显时降为 medium 或 low；画面清晰、站位明确的正常照片一律 high。
 - risk_level 判定的是**你推荐的站位区域**本身是否危险，而不是画面里有没有危险元素：区域落在人行道、广场、岸边步道上即使旁边有马路或水面也属于 low；区域落在水面中央、车道中央、悬崖边缘属于 high。
@@ -124,11 +126,7 @@ async function getImageModelId(): Promise<string> {
   return model.id
 }
 
-async function analyzeWithAI(
-  photo: PhotoInput,
-  mode: Mode,
-  retryFeedback?: string,
-): Promise<AnalysisResult> {
+async function analyzeWithAI(photo: PhotoInput, mode: Mode): Promise<AnalysisResult> {
   const modelId = await getImageModelId()
 
   const modeText =
@@ -145,12 +143,7 @@ async function analyzeWithAI(
         role: 'user',
         content: [
           { type: 'image_url', image_url: { url: photo.dataUrl } },
-          {
-            type: 'text',
-            text: `拍摄方式：${modeText}\n请分析这张旅行环境照片，生成拍摄方案 JSON。${
-              retryFeedback ? `\n注意：${retryFeedback}` : ''
-            }`,
-          },
+          { type: 'text', text: `拍摄方式：${modeText}\n请分析这张旅行环境照片，生成拍摄方案 JSON。` },
         ],
       },
     ],
@@ -183,20 +176,24 @@ async function analyzeWithAI(
 
   // 第三层：站位区域二次校验（独立轻量调用）
   // 拦两类明显异常：悬空（不可站）与危险位置（可站但不该站）。
-  // 首次被拦时带反馈让模型重试一次（多数是框放错位置，换个框即可）；
-  // 重试仍被拦，才按拦截结论降级。
+  // 首次被拦时做一次轻量重试：只让模型重新给站位框，不重跑整套方案（约 2-3s）；
+  // 重试后仍未通过，才按校验结论降级。
   if (zone) {
-    const verdict = await verifyZone(photo.dataUrl, zone)
+    let verdict = await verifyZone(photo.dataUrl, zone)
     if (!verdict.standable || !verdict.safe) {
-      if (!retryFeedback) {
-        const why = !verdict.standable
-          ? `你给出的站位区域（x=${zone.x}, y=${zone.y}, w=${zone.w}, h=${zone.h}）经校验人物无法站立（${verdict.note ?? '位置悬空'}）。请重新给出一个落在画面中可站立地面上的区域。`
-          : `你给出的站位区域（x=${zone.x}, y=${zone.y}, w=${zone.w}, h=${zone.h}）经校验存在安全风险（${verdict.note ?? '不应进入'}）。请重新给出一个安全且可站立的区域，远离水面边缘、机动车道、高处边缘。`
-        return analyzeWithAI(photo, mode, why)
+      const why = !verdict.standable
+        ? `站位区域（x=${zone.x}, y=${zone.y}, w=${zone.w}, h=${zone.h}）人物无法站立（${verdict.note ?? '位置悬空'}）`
+        : `站位区域（x=${zone.x}, y=${zone.y}, w=${zone.w}, h=${zone.h}）存在安全风险（${verdict.note ?? '不应进入'}）`
+      const fixed = await retryZoneOnly(photo.dataUrl, why)
+      if (fixed) {
+        zone = fixed
+        verdict = await verifyZone(photo.dataUrl, fixed)
       }
-      if (!verdict.standable) {
-        return needsNewPhotoResult('no_ground')
-      }
+    }
+    if (!verdict.standable) {
+      return needsNewPhotoResult('no_ground')
+    }
+    if (!verdict.safe) {
       // 一票否决：不提供站位，只保留保守文字建议
       return {
         status: 'limited_safety',
@@ -207,6 +204,12 @@ async function analyzeWithAI(
         source: 'ai',
       }
     }
+  }
+
+  // 第三点五层：站位框缺失时，先确认画面里有没有可站立地面。
+  // 纯天空、云海、航拍俯瞰等照片应判"无法分析"，而不是输出没有站位的保守建议。
+  if (!zone && !(await checkHasGround(photo.dataUrl))) {
+    return needsNewPhotoResult('no_environment')
   }
 
   // 第四层：置信度不足、无框，或主模型与二次校验对风险意见不一致 → 保守建议
@@ -253,6 +256,10 @@ const NEEDS_NEW_PHOTO_COPY: Record<string, { message: string; hint: string }> = 
   no_environment: {
     message: '照片里找不到人物可以站立的环境空间。',
     hint: '把可站立的地面（如步道、广场、岸边）拍进画面再试。',
+  },
+  aerial_view: {
+    message: '这是一张空中或纯风景视角的照片，画面中没有人物可以站立的位置。',
+    hint: '请站在景点前，把人物和脚下可站立的地面一起拍进画面。',
   },
   no_ground: {
     message: '照片里找不到人物可以站立的环境空间。',
@@ -302,6 +309,89 @@ function normalizeNotices(v: unknown): string[] {
 function mergeNotices(base: string[], extra: string[]): string[] | undefined {
   const merged = [...base, ...extra].slice(0, 3)
   return merged.length ? merged : undefined
+}
+
+/**
+ * 轻量重试：只重新生成站位框，不重出整套建议文案。
+ * 相比整体重跑（7-11s），本调用约 2-3s，重试期间的延迟代价大幅下降。
+ */
+const RETRY_ZONE_PROMPT = `你是摄影站位校对器。给定一张旅行照片和此前给出的站位区域（该区域未通过校验：人物无法站立或存在安全风险），请重新给出一个站位区域。要求：
+- 区域必须落在照片中人物实际可站立、可安全进入的位置（地面、步道、平台、台阶、草地、沙滩、水岸边等），远离水面中央、机动车道、悬崖或高处边缘；
+- 符合构图规律（如三分法），不遮挡主要景物；
+- 使用百分比坐标 0-100，x/y 为区域左上角，w/h 为宽高。
+只输出 JSON：{"zone": {"x": 数字, "y": 数字, "w": 数字, "h": 数字}}`
+
+async function retryZoneOnly(dataUrl: string, why: string): Promise<Zone | undefined> {
+  try {
+    const modelId = await getImageModelId()
+    let out = ''
+    for await (const chunk of cloud.llm.chat.completions.create({
+      model: modelId,
+      messages: [
+        { role: 'system', content: RETRY_ZONE_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: dataUrl } },
+            { type: 'text', text: `此前给出的站位区域未通过校验：${why}。请重新给出站位区域。` },
+          ],
+        },
+      ],
+      stream: true,
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    })) {
+      const delta = chunk.choices[0]?.delta?.content
+      if (delta) out += delta
+    }
+    const raw = parseResult(out)
+    const z = normalizeZone(raw.zone)
+    if (!z || !isPlausibleZone(z)) return undefined
+    return z
+  } catch {
+    return undefined // 重试通道失败 → 交给上层按原校验结论降级
+  }
+}
+
+/**
+ * 全图可站立性检查（仅当模型未给出可用站位框时调用）：
+ * 纯天空、云海、航拍俯瞰、大面积水面等完全无可站立地面的照片 → false，
+ * 判定 needs_new_photo，而不是输出"没有站位"的保守建议。
+ */
+async function checkHasGround(dataUrl: string): Promise<boolean> {
+  try {
+    const modelId = await getImageModelId()
+    let out = ''
+    for await (const chunk of cloud.llm.chat.completions.create({
+      model: modelId,
+      messages: [
+        {
+          role: 'system',
+          content: `你是图像可用性检查器。判断照片中是否存在人物实际可以站立的真实地面：地面、步道、平台、台阶、草地、沙滩、水岸边等 → true；纯天空、云海、航拍或无人机俯瞰视角、大面积水面或海面、纯色背景等人物无处可站的画面 → false。树冠上、屋顶上、山顶悬空处不算。拿不准时输出 true。只输出 JSON：{"ground": true 或 false}`,
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: dataUrl } },
+            { type: 'text', text: '请判断这张照片中是否存在人物可站立的真实地面。' },
+          ],
+        },
+      ],
+      stream: true,
+      response_format: { type: 'json_object' },
+      temperature: 0, // 检查器要的是确定性结论
+    })) {
+      const delta = chunk.choices[0]?.delta?.content
+      if (delta) out += delta
+    }
+    const start = out.indexOf('{')
+    const end = out.lastIndexOf('}')
+    if (start < 0 || end <= start) return true // 输出不合法 → 放行
+    const j = JSON.parse(out.slice(start, end + 1)) as { ground?: unknown }
+    return j.ground !== false // 只有明确 false 才判无地面（保守放行原则）
+  } catch {
+    return true // 检查通道失败 → 放行，不阻断正常流程
+  }
 }
 
 /**

@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button'
  * 不构成真正的安全边界。看板只暴露聚合计数（无明细、无会话标识、无照片），
  * 因此采用这一轻量方案；若日后需要真正受控，应改为服务端校验。
  */
-const INSIGHTS_PASSCODE = 'travelphoto2026'
+const INSIGHTS_PASSCODE = 'photo2026'
 const UNLOCK_KEY = 'ai-photo-demo:insights:v1'
 
 function readUnlocked(): boolean {

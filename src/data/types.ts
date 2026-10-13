@@ -58,6 +58,7 @@ export type NeedsNewPhotoReason =
   | 'too_close'
   | 'not_travel_scene'
   | 'no_environment'
+  | 'aerial_view'
   | 'no_ground'
   | 'low_resolution'
 

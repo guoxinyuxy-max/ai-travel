@@ -76,6 +76,8 @@ export function Result() {
             }
           />
         )}
+        {!isSafety &&
+          (result.notices ?? []).map((n) => <NoticeBar key={n} text={n} />)}
         {isSafety && (
           <div className="mt-4 rounded-card border border-danger-border bg-danger-soft p-4">
             <b className="flex items-center gap-1.5 text-[15px] text-danger-text">
