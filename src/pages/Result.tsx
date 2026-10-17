@@ -75,14 +75,12 @@ export function Result() {
 
   if (!renderable || !photo || !result?.advice) return null
 
-  const isSelfie = mode === 'selfie'
-  const shootingTag = isSelfie ? '拍摄者提示' : '拍摄者提示'
-
   const segments: Segment[] = [
     { key: 'position', label: '人物站位', text: result.advice.position, part: 'zone' },
     { key: 'composition', label: '构图', text: result.advice.composition, part: 'lines' },
     { key: 'pose', label: '动作', text: result.advice.pose, part: null },
-    { key: 'shooting', label: shootingTag, text: result.advice.shooting, part: 'direction' },
+    // 拍摄建议只以文字给出，原图不画机位/箭头
+    { key: 'shooting', label: '拍摄建议', text: result.advice.shooting, part: null },
   ]
   const current = segments[activeSeg] ?? segments[0]
 
@@ -194,7 +192,6 @@ export function Result() {
           <AnnotatedPhoto
             src={photo.dataUrl}
             zone={result.zone}
-            direction={result.direction}
             variant={result.status === 'limited_uncertain' ? 'uncertain' : 'normal'}
             highlight={current.part}
           />

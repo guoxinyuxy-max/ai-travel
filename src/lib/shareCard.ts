@@ -28,7 +28,7 @@ export async function generateShareCardBlob(
   const imgH = Math.round((img.naturalHeight / img.naturalWidth) * imgW)
 
   // 建议文本换行预计算 → 得到文本区总高
-  const advices = collectAdvices(result, mode)
+  const advices = collectAdvices(result)
   const textBlocks = advices.map((a) => ({ ...a, lines: wrap(a.text, 620) }))
   const adviceBlockH = textBlocks.reduce((h, b) => h + 44 + b.lines.length * 40 + 26, 0)
 
@@ -48,7 +48,11 @@ export async function generateShareCardBlob(
   ctx.fillText(isSafety(result) ? '场景需要注意安全' : '推荐拍摄方案', PAD, 76)
   ctx.font = '28px -apple-system, "PingFang SC", sans-serif'
   ctx.fillStyle = '#8a8a8a'
-  ctx.fillText(result.modeText ?? 'AI 旅行拍照助手', PAD, 122)
+  ctx.fillText(
+    result.modeText ?? (mode === 'selfie' ? '自拍模式' : '同伴拍摄模式'),
+    PAD,
+    122,
+  )
 
   // 标注图
   const imgY = HEADER_H
@@ -82,22 +86,6 @@ export async function generateShareCardBlob(
     )
     ctx.fill()
     ctx.stroke()
-  }
-
-  // 拍摄方向箭头
-  if (result.direction) {
-    const d = result.direction
-    const cx = PAD + (imgW * d.x) / 100
-    const cy = imgY + (imgH * d.y) / 100
-    ctx.save()
-    ctx.translate(cx, cy)
-    ctx.rotate((d.rotate * Math.PI) / 180)
-    ctx.font = '600 64px -apple-system, sans-serif'
-    ctx.fillStyle = '#ffffff'
-    ctx.shadowColor = 'rgba(0,0,0,.45)'
-    ctx.shadowBlur = 8
-    ctx.fillText('↗', -20, 20)
-    ctx.restore()
   }
 
   // 建议区
@@ -158,13 +146,13 @@ function isSafety(r: AnalysisResult): boolean {
   return r.status === 'limited_safety'
 }
 
-function collectAdvices(r: AnalysisResult, mode: Mode): AdviceItem[] {
+function collectAdvices(r: AnalysisResult): AdviceItem[] {
   if (!r.advice) return []
   return [
     { tag: '人物站位', text: r.advice.position },
     { tag: '构图建议', text: r.advice.composition },
     { tag: '动作建议', text: r.advice.pose },
-    { tag: mode === 'selfie' ? '自拍提示' : '拍摄者提示', text: r.advice.shooting },
+    { tag: '拍摄建议', text: r.advice.shooting },
   ]
 }
 

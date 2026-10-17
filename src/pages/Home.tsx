@@ -52,15 +52,10 @@ export function Home() {
       <div className="mt-6 rounded-block bg-ink-100 p-4 text-left">
         <b className="text-sm">你会获得什么？</b>
         <div className="mt-3">
-          <AnnotatedPhoto
-            src={sampleScene}
-            zone={{ x: 58, y: 46, w: 20, h: 30 }}
-            direction={{ x: 22, y: 72, rotate: 0 }}
-            alwaysShowDirection
-          />
+          <AnnotatedPhoto src={sampleScene} zone={{ x: 58, y: 46, w: 20, h: 30 }} />
         </div>
         <p className="mt-2.5 text-[13px] leading-relaxed text-ink-500">
-          AI 在原图标出推荐站位，并从拍摄者的位置给出朝向提示；分析结果页点击各条建议，可对应高亮图中的标注。
+          AI 在原图标出推荐站位和构图参考线；站位、构图、动作、拍摄建议四条文字建议，点开就能逐条看。
         </p>
       </div>
 
