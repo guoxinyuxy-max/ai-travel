@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { fetchUsageStats, type UsageStats } from '@/data/analytics'
+import {
+  fetchReasonStats,
+  fetchUsageStats,
+  type ReasonStat,
+  type UsageStats,
+} from '@/data/analytics'
+import { FEEDBACK_REASON_LABELS, type FeedbackReason } from '@/data/types'
 import { Button } from '@/components/ui/Button'
 
 /**
@@ -27,16 +33,18 @@ function readUnlocked(): boolean {
 export function Insights() {
   const [unlocked, setUnlocked] = useState(readUnlocked)
   const [stats, setStats] = useState<UsageStats | null>(null)
+  const [reasons, setReasons] = useState<ReasonStat[] | null>(null)
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
 
   const load = useCallback(async () => {
     setState('loading')
-    const data = await fetchUsageStats()
+    const [data, rs] = await Promise.all([fetchUsageStats(), fetchReasonStats()])
     if (!data) {
       setState('failed')
       return
     }
     setStats(data)
+    setReasons(rs)
     setState('ready')
   }, [])
 
@@ -168,6 +176,41 @@ export function Insights() {
             <Metric label="👍 有帮助" value={String(stats.feedback_helpful)} />
             <Metric label="👎 没帮助" value={String(stats.feedback_not_helpful)} />
           </div>
+
+          {/* 没帮助原因分布 */}
+          {reasons && reasons.length > 0 && (
+            <>
+              <h3 className="mt-7 mb-2 text-base font-semibold">没帮助原因分布</h3>
+              <div className="rounded-card bg-ink-100 p-4">
+                {reasons
+                  .slice()
+                  .sort((a, b) => b.count - a.count)
+                  .map((r, i) => {
+                    const total = reasons.reduce((s, x) => s + x.count, 0)
+                    const pct = total > 0 ? Math.round((r.count / total) * 100) : 0
+                    const label =
+                      FEEDBACK_REASON_LABELS[r.reason as FeedbackReason] ?? r.reason
+                    return (
+                      <div key={r.reason} className={i > 0 ? 'mt-3.5' : ''}>
+                        <div className="flex items-baseline justify-between text-sm">
+                          <span className="text-ink-700">{label}</span>
+                          <span className="tabular-nums">
+                            <b>{r.count}</b>
+                            <span className="ml-1.5 text-xs text-ink-400">{pct}%</span>
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-200">
+                          <div
+                            className="h-full rounded-full bg-primary transition-[width] duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </>
+          )}
 
           {/* 其他行为 */}
           <h3 className="mt-7 mb-2 text-base font-semibold">其他行为</h3>

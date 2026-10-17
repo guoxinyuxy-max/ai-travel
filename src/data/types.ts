@@ -2,6 +2,34 @@
 
 export type Mode = 'companion' | 'selfie'
 
+/**
+ * 重新生成的方案方向（R7）：
+ * 用户对当前方案不满意时，保持环境分析不变，按固定方向换一套建议。
+ */
+export type DirectionId = 'subject' | 'wide' | 'mood'
+
+export const DIRECTION_LABELS: Record<DirectionId, string> = {
+  subject: '人物更突出',
+  wide: '环境更开阔',
+  mood: '氛围感更强',
+}
+
+/** 反馈原因标签（点踩时收集，对应 PRD 2.4 满意度验证） */
+export type FeedbackReason =
+  | 'zone_wrong'
+  | 'hard_to_understand'
+  | 'too_conservative'
+  | 'scene_misread'
+  | 'other'
+
+export const FEEDBACK_REASON_LABELS: Record<FeedbackReason, string> = {
+  zone_wrong: '站位不合理',
+  hard_to_understand: '建议看不懂',
+  too_conservative: '太保守没新意',
+  scene_misread: '场景识别错了',
+  other: '其他原因',
+}
+
 export interface PhotoInput {
   /** 压缩后的 dataURL（image/jpeg） */
   dataUrl: string
@@ -59,11 +87,15 @@ export type NeedsNewPhotoReason =
   | 'not_travel_scene'
   | 'no_environment'
   | 'aerial_view'
+  | 'unreachable_view'
   | 'no_ground'
   | 'low_resolution'
 
 export type BadImageReason = 'unsupported_format' | 'corrupted' | 'too_large'
 export type FailedReason = 'timeout' | 'model_error' | 'network_error'
+
+/** 与拍摄直接相关的风险类型（决定是否降级/不给站位） */
+export type HazardType = 'road' | 'cliff' | 'water' | 'crowd' | 'none'
 
 export interface AnalysisResult {
   status: AnalysisStatus
@@ -79,8 +111,12 @@ export interface AnalysisResult {
   advice?: Advice
   /** 安全 / 注意事项提示（limited_safety 为红卡，其余为普通提示条） */
   notices?: string[]
+  /** 风险类型：road/cliff/water 一票否决站位，crowd 降级提示 */
+  hazard?: HazardType
   /** 模型自报置信度（limited_uncertain 的判定来源之一） */
   confidence?: 'high' | 'medium' | 'low'
+  /** 本方案对应的方向偏好（重新生成时标记；无方向偏好时缺省） */
+  planDirection?: DirectionId
   /** 结果来源：ai = 真实模型分析；fallback = 规则版降级建议 */
   source: 'ai' | 'fallback'
 }
@@ -89,5 +125,7 @@ export interface Feedback {
   taskId: string
   mode: Mode
   helpful: boolean
+  /** 点踩时的原因标签（点踩后可选填） */
+  reason?: FeedbackReason
   at: number
 }

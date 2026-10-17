@@ -23,4 +23,5 @@ export function getFeedbacks(): Feedback[] {
 /** 重置演示数据（设置入口使用） */
 export function resetDemoData(): void {
   localStorage.removeItem(FEEDBACK_KEY)
+  localStorage.removeItem('ai-photo-demo:plans:v1') // 已下线功能的历史数据清理
 }

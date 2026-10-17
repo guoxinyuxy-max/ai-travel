@@ -18,9 +18,14 @@ export type UsageEvent =
   | 'analyze_blocked'
   | 'view_result'
   | 'feedback'
+  | 'feedback_reason'
   | 'regenerate'
+  | 'conditions_edit'
   | 'photo_changed'
   | 'safety_confirmed'
+  | 'plan_saved'
+  | 'plan_shared'
+  | 'zone_feedback'
 
 const SESSION_KEY = 'ai-photo-demo:session:v1'
 
@@ -90,4 +95,18 @@ export async function fetchUsageStats(): Promise<UsageStats | null> {
   const { data, error } = await cloud.database.from('usage_stats').select('*').maybeSingle()
   if (error || !data) return null
   return data as UsageStats
+}
+
+/** 没帮助原因分布（feedback_reason_stats 视图，仅聚合计数） */
+export interface ReasonStat {
+  reason: string
+  count: number
+}
+
+export async function fetchReasonStats(): Promise<ReasonStat[] | null> {
+  const { data, error } = await cloud.database
+    .from('feedback_reason_stats')
+    .select('reason,count')
+  if (error || !data) return null
+  return data as ReasonStat[]
 }

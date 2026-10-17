@@ -1,33 +1,43 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { analyzeEnvironment } from '@/data/ai'
+import { analyzeEnvironment, type AnalysisStage } from '@/data/ai'
 import { track } from '@/data/analytics'
 import { useDemoStore } from '@/data/store'
+import { DIRECTION_LABELS, type DirectionId } from '@/data/types'
 import { cn } from '@/lib/cn'
 
-const STEPS = ['理解当前环境', '分析可用构图空间', '生成可执行拍摄建议']
+const STEPS = ['理解当前环境', '校验站位与安全', '生成可执行建议']
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+/** AI 管线真实阶段 → 步骤下标（步骤 i 处于进行中） */
+const STAGE_STEP: Record<AnalysisStage, number> = { env: 0, verify: 1, compose: 2 }
 
 export function Analysis() {
   const navigate = useNavigate()
-  const [step, setStep] = useState(0) // 已完成的步骤数
+  const [step, setStep] = useState(0) // 进行中的步骤下标；3 = 全部完成
+  const [direction, setDirection] = useState<DirectionId | null>(null)
 
   useEffect(() => {
-    const { photo, mode } = useDemoStore.getState()
+    const { photo, mode, direction: dir } = useDemoStore.getState()
     if (!photo || !mode) {
       navigate('/task', { replace: true })
       return
     }
+    setDirection(dir)
 
     let cancelled = false
-    const timers = [setTimeout(() => setStep(1), 800), setTimeout(() => setStep(2), 1700)]
 
-    Promise.all([analyzeEnvironment(photo, mode), sleep(2600)])
-      .then(([result]) => {
+    analyzeEnvironment(photo, mode, {
+      onStage: (stage) => {
+        if (!cancelled) setStep(STAGE_STEP[stage])
+      },
+      direction: dir ?? undefined,
+    })
+      .then((result) => {
         if (cancelled) return
         setStep(3)
         useDemoStore.getState().setResult(result)
+        // 方向偏好为一次性输入：本次分析完成后清空，避免影响下一次新任务
+        useDemoStore.getState().setDirection(null)
         const blocked =
           result.status === 'needs_new_photo' ||
           result.status === 'bad_image' ||
@@ -35,7 +45,7 @@ export function Analysis() {
         track(blocked ? 'analyze_blocked' : 'analyze_ok', {
           mode,
           source: result.source,
-          meta: { status: result.status },
+          meta: { status: result.status, direction: dir ?? undefined },
         })
         setTimeout(() => {
           if (!cancelled) navigate(blocked ? '/image-error' : '/result')
@@ -47,7 +57,6 @@ export function Analysis() {
 
     return () => {
       cancelled = true
-      timers.forEach(clearTimeout)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -55,8 +64,12 @@ export function Analysis() {
   return (
     <div className="pt-14 text-center">
       <div className="animate-spin-slow mx-auto size-12 rounded-full border-4 border-ink-200 border-t-primary" />
-      <h2 className="mt-5 text-2xl font-bold">AI 正在分析当前环境</h2>
-      <p className="mt-2 text-ink-500">会结合现场空间和你的拍摄方式生成建议。</p>
+      <h2 className="mt-5 text-2xl font-bold">
+        {direction ? `正在按「${DIRECTION_LABELS[direction]}」调整方案` : 'AI 正在分析当前环境'}
+      </h2>
+      <p className="mt-2 text-ink-500">
+        {direction ? '保持环境分析结果，换一个方向重新生成建议。' : '会结合现场空间和你的拍摄方式生成建议。'}
+      </p>
 
       <div className="mt-6 text-left">
         {STEPS.map((label, i) => {

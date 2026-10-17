@@ -9,6 +9,9 @@ dist-ssr
 .workbuddy/
 .wbapp_*.genie
 
+# 版本快照目录：本地安全网（git 历史是第二层保险），不入库避免仓库膨胀
+versions/
+
 .vscode/*
 !.vscode/extensions.json
 .idea
