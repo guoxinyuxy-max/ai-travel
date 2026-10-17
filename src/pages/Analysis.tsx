@@ -62,7 +62,7 @@ export function Analysis() {
   }, [])
 
   return (
-    <div className="pt-14 text-center">
+    <div className="pt-14 pb-16 text-center">
       <div className="animate-spin-slow mx-auto size-12 rounded-full border-4 border-ink-200 border-t-primary" />
       <h2 className="mt-5 text-2xl font-bold">
         {direction ? `正在按「${DIRECTION_LABELS[direction]}」调整方案` : 'AI 正在分析当前环境'}
@@ -95,6 +95,14 @@ export function Analysis() {
           )
         })}
       </div>
+
+      {/* 弱网兜底：允许取消返回（照片与拍摄方式保留，可直接重新开始） */}
+      <button
+        onClick={() => navigate('/task')}
+        className="mt-8 min-h-11 rounded-full px-6 text-sm text-ink-400 underline underline-offset-2 transition hover:text-ink-700"
+      >
+        取消分析，返回任务页
+      </button>
     </div>
   )
 }

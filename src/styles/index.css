@@ -43,6 +43,9 @@
   body {
     @apply bg-page text-ink-900 font-sans;
     min-height: 100dvh;
+    /* APP 规格：禁止双击缩放误触，长按选中只在输入框启用 */
+    touch-action: manipulation;
+    overscroll-behavior-y: none;
   }
 
   * {
@@ -58,5 +61,29 @@
   }
   .animate-spin-slow {
     animation: spin-slow 1s linear infinite;
+  }
+
+  /* APP 规格：底部固定操作栏（含刘海屏安全区） */
+  .app-bottom-bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 30;
+    border-top: 1px solid var(--color-ink-200);
+    background: color-mix(in srgb, #ffffff 94%, transparent);
+    backdrop-filter: blur(12px);
+    padding-top: 0.75rem;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+  .app-bottom-bar > div {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 28rem;
+    padding-inline: 1.25rem;
+  }
+
+  /* 顶栏与内容的安全区适配（横屏刘海） */
+  .app-safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }

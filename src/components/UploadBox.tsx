@@ -29,7 +29,7 @@ export function UploadBox({ photo, onPhoto }: Props) {
           <img
             src={photo.dataUrl}
             alt="当前旅行环境照片"
-            className="max-h-64 w-full object-cover lg:max-h-80"
+            className="max-h-72 w-full object-cover"
           />
         </div>
         <div className="mt-2.5 flex items-center justify-between text-[13px] text-ink-500">

@@ -44,12 +44,7 @@ export function ImageError() {
             </Button>
           </>
         ) : (
-          <>
-            <Button onClick={() => navigate('/task')}>重新拍摄</Button>
-            <Button variant="secondary" onClick={() => navigate('/task')}>
-              从相册选择
-            </Button>
-          </>
+          <Button onClick={() => navigate('/task')}>重新上传照片</Button>
         )}
       </div>
     </div>
