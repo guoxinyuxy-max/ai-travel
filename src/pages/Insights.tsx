@@ -93,6 +93,19 @@ export function Insights() {
   const helpfulTotal = stats.feedback_helpful + stats.feedback_not_helpful
   const helpfulRate =
     helpfulTotal > 0 ? Math.round((stats.feedback_helpful / helpfulTotal) * 100) : 0
+  // 图文联动使用率：用过联动的会话 / 看过结果的会话
+  const highlightRate =
+    stats.step_view > 0
+      ? Math.round((stats.card_highlight_sessions / stats.step_view) * 100)
+      : 0
+  // 分析取消率：取消次数 / 点击生成的次数
+  const cancelRate =
+    stats.step_generate > 0 ? Math.round((stats.cancel_count / stats.step_generate) * 100) : 0
+  // 站位误判率：现场反馈「到不了」的占比
+  const zoneMissRate =
+    stats.zone_vote_total > 0
+      ? Math.round((stats.zone_vote_unreachable / stats.zone_vote_total) * 100)
+      : 0
 
   const funnel = [
     { label: '打开首页', count: stats.step_visit },
@@ -209,6 +222,42 @@ export function Insights() {
                     )
                   })}
               </div>
+            </>
+          )}
+
+          {/* 交互与质量 */}
+          <h3 className="mt-7 mb-2 text-base font-semibold">交互与质量</h3>
+          <div className="rounded-card bg-ink-100 p-4">
+            <Row label={`图文联动点击（${stats.card_highlight_count} 次）`} value={stats.card_highlight_sessions} />
+            <Row label="分析中途取消" value={stats.cancel_count} />
+            <Row label="出现风险场景的会话" value={stats.hazard_sessions} />
+            <Row label="分享给拍摄者" value={stats.share_count} last />
+          </div>
+          <p className="mt-2 px-1 text-xs leading-relaxed text-ink-400">
+            联动使用率 {highlightRate}%（点开过标注的会话 / 看过结果的会话）；分析取消率{' '}
+            {cancelRate}%（取消 / 点击生成）。「图文联动点击」右侧数字是会话数。
+          </p>
+
+          {/* 站位可用性（现场反馈） */}
+          {stats.zone_vote_total > 0 && (
+            <>
+              <h3 className="mt-7 mb-2 text-base font-semibold">
+                站位可用性
+                <span className="ml-2 text-xs font-normal text-ink-400">
+                  现场说「到不了」{zoneMissRate}%
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Metric
+                  label="能走到"
+                  value={String(stats.zone_vote_total - stats.zone_vote_unreachable)}
+                />
+                <Metric label="到不了" value={String(stats.zone_vote_unreachable)} />
+              </div>
+              <p className="mt-2 px-1 text-xs leading-relaxed text-ink-400">
+                共 {stats.zone_vote_total} 票现场反馈。这一比例越高，说明图上画的站位越不可达，
+                需要收紧俯拍/越景照片的判定。
+              </p>
             </>
           )}
 

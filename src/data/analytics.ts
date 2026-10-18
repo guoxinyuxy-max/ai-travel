@@ -16,7 +16,10 @@ export type UsageEvent =
   | 'generate_clicked'
   | 'analyze_ok'
   | 'analyze_blocked'
+  | 'analysis_cancelled'
   | 'view_result'
+  | 'hazard_shown'
+  | 'plan_card_highlight'
   | 'feedback'
   | 'feedback_reason'
   | 'regenerate'
@@ -89,6 +92,18 @@ export interface UsageStats {
   complete_flow: number
   first_event_at: string | null
   last_event_at: string | null
+  /** 图文联动：点击建议卡高亮图中标注的次数 / 用过这个交互的会话数 */
+  card_highlight_count: number
+  card_highlight_sessions: number
+  /** 分析中途取消（弱网或等待不耐） */
+  cancel_count: number
+  /** 出现风险场景（车道/悬崖/水边/人群）的会话数 */
+  hazard_sessions: number
+  /** 分享给拍摄者次数 */
+  share_count: number
+  /** 站位可达性投票：总票数 / 「到不了」票数 */
+  zone_vote_total: number
+  zone_vote_unreachable: number
 }
 
 export async function fetchUsageStats(): Promise<UsageStats | null> {

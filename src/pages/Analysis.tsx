@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { analyzeEnvironment, type AnalysisStage } from '@/data/ai'
 import { track } from '@/data/analytics'
@@ -15,6 +15,8 @@ export function Analysis() {
   const navigate = useNavigate()
   const [step, setStep] = useState(0) // 进行中的步骤下标；3 = 全部完成
   const [direction, setDirection] = useState<DirectionId | null>(null)
+  // 取消埋点用：跟随渲染的 step 之外再留一份，避免闭包拿到旧值
+  const stepRef = useRef(0)
 
   useEffect(() => {
     const { photo, mode, direction: dir } = useDemoStore.getState()
@@ -28,7 +30,10 @@ export function Analysis() {
 
     analyzeEnvironment(photo, mode, {
       onStage: (stage) => {
-        if (!cancelled) setStep(STAGE_STEP[stage])
+        if (!cancelled) {
+          stepRef.current = STAGE_STEP[stage]
+          setStep(STAGE_STEP[stage])
+        }
       },
       direction: dir ?? undefined,
     })
@@ -98,7 +103,14 @@ export function Analysis() {
 
       {/* 弱网兜底：允许取消返回（照片与拍摄方式保留，可直接重新开始） */}
       <button
-        onClick={() => navigate('/task')}
+        onClick={() => {
+          // 中途放弃是流失信号：记录停在第几步（0 环境 / 1 校验 / 2 建议）
+          track('analysis_cancelled', {
+            mode: useDemoStore.getState().mode ?? undefined,
+            meta: { stage: stepRef.current },
+          })
+          navigate('/task')
+        }}
         className="mt-8 min-h-11 rounded-full px-6 text-sm text-ink-400 underline underline-offset-2 transition hover:text-ink-700"
       >
         取消分析，返回任务页

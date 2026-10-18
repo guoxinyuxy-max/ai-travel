@@ -58,7 +58,15 @@ export function Result() {
   }, [renderable, navigate])
 
   useEffect(() => {
-    if (renderable) track('view_result', { meta: { status: result?.status } })
+    if (!renderable) return
+    track('view_result', { meta: { status: result?.status } })
+    // 风险场景（车道/悬崖/水边/人群）出现的频次，用于评估安全拦截覆盖
+    if (result?.hazard && result.hazard !== 'none') {
+      track('hazard_shown', {
+        mode: mode ?? undefined,
+        meta: { hazard: result.hazard, status: result.status },
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -210,7 +218,21 @@ export function Result() {
               return (
                 <div
                   key={c.tag}
-                  onClick={clickable ? () => setHighlight(active ? null : c.part) : undefined}
+                  onClick={
+                    clickable
+                      ? () => {
+                          const next = active ? null : c.part
+                          setHighlight(next)
+                          // 只看选中（点开）这一次，衡量图文联动是否被理解和使用
+                          if (next) {
+                            track('plan_card_highlight', {
+                              mode: mode ?? undefined,
+                              meta: { part: next },
+                            })
+                          }
+                        }
+                      : undefined
+                  }
                   className={cn(
                     'rounded-card bg-ink-100 p-4 transition-colors',
                     clickable && 'cursor-pointer hover:bg-ink-150',
