@@ -1,73 +1,85 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import {
-  fetchReasonStats,
-  fetchUsageStats,
-  type ReasonStat,
-  type UsageStats,
-} from '@/data/analytics'
+import { fetchInsights, type ReasonStat, type UsageStats } from '@/data/analytics'
 import { FEEDBACK_REASON_LABELS, type FeedbackReason } from '@/data/types'
 import { Button } from '@/components/ui/Button'
 
 /**
- * 看板访问口令。
- *
- * 说明：这是前端口令，编译后存在于 JS 产物中，只能挡住「顺手点开链接」的访客，
- * 不构成真正的安全边界。看板只暴露聚合计数（无明细、无会话标识、无照片），
- * 因此采用这一轻量方案；若日后需要真正受控，应改为服务端校验。
+ * 看板口令校验在服务端完成：
+ * - 前端不再硬编码口令，只把访客输入的口令交给数据库函数比对，错误则返回空集
+ * - 聚合视图已撤销匿名读权限，绕过页面直接查接口也拿不到数据
+ * - 输入过的口令只记在 sessionStorage，关掉浏览器即失效
  */
-const INSIGHTS_PASSCODE = 'photo2026'
-const UNLOCK_KEY = 'ai-photo-demo:insights:v1'
+const UNLOCK_KEY = 'ai-photo-demo:insights:v2'
 
-function readUnlocked(): boolean {
+function readStoredPasscode(): string | null {
   try {
-    return sessionStorage.getItem(UNLOCK_KEY) === '1'
+    return sessionStorage.getItem(UNLOCK_KEY)
   } catch {
-    return false
+    return null
   }
 }
+
+type LoadState = 'idle' | 'loading' | 'ready' | 'failed' | 'denied'
 
 /**
  * 使用数据看板（/insights）—— 不挂在产品导航里，仅供作者查看。
  * 数据来自数据库只读聚合视图：只有计数，没有明细、没有会话标识、没有照片。
  */
 export function Insights() {
-  const [unlocked, setUnlocked] = useState(readUnlocked)
+  const [passcode, setPasscode] = useState<string | null>(readStoredPasscode)
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [reasons, setReasons] = useState<ReasonStat[] | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+  const [state, setState] = useState<LoadState>('idle')
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (code: string) => {
     setState('loading')
-    const [data, rs] = await Promise.all([fetchUsageStats(), fetchReasonStats()])
-    if (!data) {
-      setState('failed')
+    const res = await fetchInsights(code)
+    if (res.status === 'ok') {
+      setStats(res.stats)
+      setReasons(res.reasons)
+      setState('ready')
       return
     }
-    setStats(data)
-    setReasons(rs)
-    setState('ready')
+    if (res.status === 'denied') {
+      // 口令不对（或已被更换）：清掉记住的口令，退回输入框
+      try {
+        sessionStorage.removeItem(UNLOCK_KEY)
+      } catch {
+        /* 隐私模式 */
+      }
+      setStats(null)
+      setReasons(null)
+      setPasscode(null)
+      setState('denied')
+      return
+    }
+    setState('failed')
   }, [])
 
   useEffect(() => {
-    if (unlocked) void load()
-  }, [load, unlocked])
+    if (passcode) void load(passcode)
+  }, [passcode, load])
 
-  if (!unlocked) {
+  const handlePasscode = (value: string) => {
+    try {
+      sessionStorage.setItem(UNLOCK_KEY, value)
+    } catch {
+      /* 隐私模式下仅本次有效 */
+    }
+    setPasscode(value)
+  }
+
+  if (!passcode) {
     return (
       <PasscodeGate
-        onUnlock={() => {
-          try {
-            sessionStorage.setItem(UNLOCK_KEY, '1')
-          } catch {
-            /* 隐私模式下无法持久化，仅本次会话有效 */
-          }
-          setUnlocked(true)
-        }}
+        onSubmit={handlePasscode}
+        denied={state === 'denied'}
+        verifying={state === 'loading'}
       />
     )
   }
 
-  if (state === 'loading') {
+  if (state === 'idle' || state === 'loading') {
     return (
       <div className="pt-24 text-center text-ink-500">
         <div className="animate-spin-slow mx-auto size-10 rounded-full border-4 border-ink-200 border-t-primary" />
@@ -82,7 +94,7 @@ export function Insights() {
         <h2 className="text-xl font-bold">暂时取不到数据</h2>
         <p className="mt-2 text-sm text-ink-500">请检查网络后重试。</p>
         <div className="mx-auto mt-5 max-w-60">
-          <Button onClick={() => void load()}>重新加载</Button>
+          <Button onClick={() => void load(passcode)}>重新加载</Button>
         </div>
       </div>
     )
@@ -125,7 +137,7 @@ export function Insights() {
           </p>
         </div>
         <button
-          onClick={() => void load()}
+          onClick={() => void load(passcode)}
           className="shrink-0 rounded-btn border border-ink-300 bg-white px-3 py-2 text-[13px] hover:bg-ink-100"
         >
           刷新
@@ -315,18 +327,27 @@ function Row({ label, value, last }: { label: string; value: number; last?: bool
   )
 }
 
-/** 口令闸门 —— 未解锁时不渲染任何统计数据 */
-function PasscodeGate({ onUnlock }: { onUnlock: () => void }) {
+/** 口令闸门 —— 口令交给服务端校验，未通过不渲染任何统计数据 */
+function PasscodeGate({
+  onSubmit,
+  denied,
+  verifying,
+}: {
+  onSubmit: (value: string) => void
+  denied: boolean
+  verifying: boolean
+}) {
   const [value, setValue] = useState('')
-  const [error, setError] = useState(false)
+  // 输错后重新输入即隐藏错误提示（denied 来自父组件，故用本地态"抹掉"它）
+  const [dismissed, setDismissed] = useState(false)
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (value === INSIGHTS_PASSCODE) {
-      onUnlock()
-      return
-    }
-    setError(true)
+    if (verifying) return
+    const v = value.trim()
+    if (!v) return
+    setDismissed(false)
+    onSubmit(v)
   }
 
   return (
@@ -343,15 +364,17 @@ function PasscodeGate({ onUnlock }: { onUnlock: () => void }) {
           placeholder="口令"
           onChange={(e) => {
             setValue(e.target.value)
-            setError(false)
+            setDismissed(true)
           }}
           className="mt-5 w-full rounded-btn border border-ink-300 bg-white px-4 py-3 text-base outline-none focus:border-primary"
         />
-        {error && (
+        {denied && !dismissed && (
           <p className="mt-2 text-center text-[13px] text-danger-text">口令不对，请重试</p>
         )}
         <div className="mt-4">
-          <Button type="submit">进入</Button>
+          <Button type="submit" disabled={verifying || !value.trim()}>
+            {verifying ? '验证中…' : '进入'}
+          </Button>
         </div>
       </form>
     </div>

@@ -106,22 +106,37 @@ export interface UsageStats {
   zone_vote_unreachable: number
 }
 
-export async function fetchUsageStats(): Promise<UsageStats | null> {
-  const { data, error } = await cloud.database.from('usage_stats').select('*').maybeSingle()
-  if (error || !data) return null
-  return data as UsageStats
+export async function fetchInsights(passcode: string): Promise<InsightsResult> {
+  // 看板数据不再直接读视图：视图已撤销匿名读权限，
+  // 只能通过服务端函数校验口令后取回（口令不进前端代码）。
+  const rpc = cloud.database.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>
+
+  try {
+    const statsRes = await rpc('get_usage_stats', { passcode })
+    if (statsRes.error) return { status: 'failed' }
+    const rows = Array.isArray(statsRes.data) ? (statsRes.data as UsageStats[]) : []
+    // 口令不对时服务端返回空集（不区分"不存在"与"口令错"，避免探测）
+    if (rows.length === 0) return { status: 'denied' }
+
+    const reasonRes = await rpc('get_reason_stats', { passcode })
+    const reasons = Array.isArray(reasonRes.data) ? (reasonRes.data as ReasonStat[]) : []
+    return { status: 'ok', stats: rows[0], reasons }
+  } catch {
+    return { status: 'failed' }
+  }
 }
 
-/** 没帮助原因分布（feedback_reason_stats 视图，仅聚合计数） */
+/** 看板数据读取结果：denied = 口令不对，failed = 网络/服务异常 */
+export type InsightsResult =
+  | { status: 'ok'; stats: UsageStats; reasons: ReasonStat[] }
+  | { status: 'denied' }
+  | { status: 'failed' }
+
+/** 没帮助原因分布（feedback_reason_stats 视图，仅聚合计数；经服务端口令校验读取） */
 export interface ReasonStat {
   reason: string
   count: number
-}
-
-export async function fetchReasonStats(): Promise<ReasonStat[] | null> {
-  const { data, error } = await cloud.database
-    .from('feedback_reason_stats')
-    .select('reason,count')
-  if (error || !data) return null
-  return data as ReasonStat[]
 }
