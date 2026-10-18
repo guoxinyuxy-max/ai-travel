@@ -19,7 +19,7 @@ function readStoredPasscode(): string | null {
   }
 }
 
-type LoadState = 'idle' | 'loading' | 'ready' | 'failed' | 'denied'
+type LoadState = 'idle' | 'loading' | 'ready' | 'failed' | 'denied' | 'locked'
 
 /**
  * 使用数据看板（/insights）—— 不挂在产品导航里，仅供作者查看。
@@ -30,6 +30,8 @@ export function Insights() {
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [reasons, setReasons] = useState<ReasonStat[] | null>(null)
   const [state, setState] = useState<LoadState>('idle')
+  // 连续输错被服务端锁定的截止时间（毫秒时间戳）
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null)
 
   const load = useCallback(async (code: string) => {
     setState('loading')
@@ -53,6 +55,20 @@ export function Insights() {
       setState('denied')
       return
     }
+    if (res.status === 'locked') {
+      // 连续输错被临时锁定：同样退回输入框，并提示剩余时间
+      try {
+        sessionStorage.removeItem(UNLOCK_KEY)
+      } catch {
+        /* 隐私模式 */
+      }
+      setStats(null)
+      setReasons(null)
+      setPasscode(null)
+      setLockedUntil(Date.now() + res.retryAfter * 1000)
+      setState('locked')
+      return
+    }
     setState('failed')
   }, [])
 
@@ -74,6 +90,8 @@ export function Insights() {
       <PasscodeGate
         onSubmit={handlePasscode}
         denied={state === 'denied'}
+        locked={state === 'locked'}
+        lockedUntil={lockedUntil}
         verifying={state === 'loading'}
       />
     )
@@ -331,19 +349,35 @@ function Row({ label, value, last }: { label: string; value: number; last?: bool
 function PasscodeGate({
   onSubmit,
   denied,
+  locked,
+  lockedUntil,
   verifying,
 }: {
   onSubmit: (value: string) => void
   denied: boolean
+  locked: boolean
+  lockedUntil: number | null
   verifying: boolean
 }) {
   const [value, setValue] = useState('')
   // 输错后重新输入即隐藏错误提示（denied 来自父组件，故用本地态"抹掉"它）
   const [dismissed, setDismissed] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  // 锁定期间每秒刷新，让剩余时间走字
+  useEffect(() => {
+    if (!locked) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [locked])
+
+  const remainMs = locked && lockedUntil ? Math.max(0, lockedUntil - now) : 0
+  const blocked = locked && remainMs > 0
+  const remainMin = Math.max(1, Math.ceil(remainMs / 60000))
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    if (verifying) return
+    if (verifying || blocked) return
     const v = value.trim()
     if (!v) return
     setDismissed(false)
@@ -368,14 +402,21 @@ function PasscodeGate({
           }}
           className="mt-5 w-full rounded-btn border border-ink-300 bg-white px-4 py-3 text-base outline-none focus:border-primary"
         />
-        {denied && !dismissed && (
+        {blocked ? (
+          <p className="mt-2 text-center text-[13px] text-danger-text">
+            尝试次数过多，已锁定 {remainMin} 分钟
+          </p>
+        ) : denied && !dismissed ? (
           <p className="mt-2 text-center text-[13px] text-danger-text">口令不对，请重试</p>
-        )}
+        ) : null}
         <div className="mt-4">
-          <Button type="submit" disabled={verifying || !value.trim()}>
-            {verifying ? '验证中…' : '进入'}
+          <Button type="submit" disabled={verifying || blocked || !value.trim()}>
+            {blocked ? '已锁定' : verifying ? '验证中…' : '进入'}
           </Button>
         </div>
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-ink-400">
+          连续输错 5 次会锁定 15 分钟
+        </p>
       </form>
     </div>
   )

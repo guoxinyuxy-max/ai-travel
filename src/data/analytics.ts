@@ -106,33 +106,50 @@ export interface UsageStats {
   zone_vote_unreachable: number
 }
 
+/**
+ * 取看板数据 —— 单次 RPC 完成「口令校验 + 取数」，口令不进前端代码。
+ *
+ * 服务端（get_insights）行为：
+ * - 口令正确：返回 { ok: true, stats, reasons }
+ * - 口令错误：返回 { ok: false, state: 'denied' }，并累计失败次数
+ * - 连续错 5 次：锁定 15 分钟，返回 { ok: false, state: 'locked', retry_after }
+ */
 export async function fetchInsights(passcode: string): Promise<InsightsResult> {
-  // 看板数据不再直接读视图：视图已撤销匿名读权限，
-  // 只能通过服务端函数校验口令后取回（口令不进前端代码）。
   const rpc = cloud.database.rpc as unknown as (
     fn: string,
     args?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>
 
   try {
-    const statsRes = await rpc('get_usage_stats', { passcode })
-    if (statsRes.error) return { status: 'failed' }
-    const rows = Array.isArray(statsRes.data) ? (statsRes.data as UsageStats[]) : []
-    // 口令不对时服务端返回空集（不区分"不存在"与"口令错"，避免探测）
-    if (rows.length === 0) return { status: 'denied' }
+    const res = await rpc('get_insights', { passcode })
+    if (res.error) return { status: 'failed' }
+    if (!res.data || typeof res.data !== 'object') return { status: 'failed' }
 
-    const reasonRes = await rpc('get_reason_stats', { passcode })
-    const reasons = Array.isArray(reasonRes.data) ? (reasonRes.data as ReasonStat[]) : []
-    return { status: 'ok', stats: rows[0], reasons }
+    const payload = res.data as {
+      ok?: boolean
+      state?: string
+      retry_after?: number
+      stats?: UsageStats
+      reasons?: ReasonStat[]
+    }
+
+    if (payload.ok && payload.stats) {
+      return { status: 'ok', stats: payload.stats, reasons: payload.reasons ?? [] }
+    }
+    if (payload.state === 'locked') {
+      return { status: 'locked', retryAfter: payload.retry_after ?? 900 }
+    }
+    return { status: 'denied' }
   } catch {
     return { status: 'failed' }
   }
 }
 
-/** 看板数据读取结果：denied = 口令不对，failed = 网络/服务异常 */
+/** 看板数据读取结果：denied = 口令不对；locked = 连续错误被临时锁定 */
 export type InsightsResult =
   | { status: 'ok'; stats: UsageStats; reasons: ReasonStat[] }
   | { status: 'denied' }
+  | { status: 'locked'; retryAfter: number }
   | { status: 'failed' }
 
 /** 没帮助原因分布（feedback_reason_stats 视图，仅聚合计数；经服务端口令校验读取） */
