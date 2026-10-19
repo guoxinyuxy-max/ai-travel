@@ -5,6 +5,9 @@
   "description": "AI 旅行拍照助手 —— 上传旅行环境照片，由多模态大模型生成可直接执行的拍摄方案（站位、构图、动作、拍摄提示），并在原图上标注站位区域与三分参考线。",
   "type": "module",
   "homepage": "https://ai-travel-photo.app.workbuddy.host/",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
