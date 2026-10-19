@@ -80,6 +80,7 @@ const CATEGORY_COPY: Record<BlockCategory, BlockCopy> = {
 export function ImageError() {
   const navigate = useNavigate()
   const result = useDemoStore((s) => s.result)
+  const photo = useDemoStore((s) => s.photo)
 
   useEffect(() => {
     if (!result) navigate('/task', { replace: true })
@@ -95,6 +96,22 @@ export function ImageError() {
   return (
     <div className="pb-6">
       <h2 className="text-2xl font-bold">{copy.title}</h2>
+
+      {/* 把用户刚上传的照片一并显示出来：让"这张为什么不行"有具体所指 */}
+      {photo && (
+        <div className="mt-4">
+          <div className="relative overflow-hidden rounded-block bg-ink-100">
+            <img
+              src={photo.dataUrl}
+              alt="本次提交的照片"
+              className="max-h-[42vh] w-full object-contain"
+            />
+            <span className="absolute top-2.5 left-2.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] text-white">
+              你上传的照片
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 rounded-card border border-danger-border bg-danger-soft p-4">
         <b className="block text-[15px]">{copy.headline}</b>
