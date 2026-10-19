@@ -16,6 +16,7 @@ export type UsageEvent =
   | 'generate_clicked'
   | 'analyze_ok'
   | 'analyze_blocked'
+  | 'block_feedback'
   | 'analysis_cancelled'
   | 'view_result'
   | 'hazard_shown'
@@ -73,8 +74,32 @@ export function track(event: UsageEvent, props: TrackProps = {}): void {
   })()
 }
 
-/** 使用行为聚合统计（来自数据库只读视图，仅含聚合计数） */
-export interface UsageStats {
+/**
+ * 拦截归类（与拦截页的展示口径一致）：
+ * - photo_quality：照片质量（模糊 / 分辨率低）
+ * - environment：环境信息不足（自拍特写 / 太近 / 非旅行场景 / 无环境）
+ * - viewpoint：视角机位问题（航拍 / 高处俯拍 / 无可站地面）
+ * - file / service：文件问题 / 服务失败
+ */
+export type BlockCategory = 'photo_quality' | 'environment' | 'viewpoint' | 'file' | 'service'
+
+export function blockCategoryOf(status: string, reason?: string): BlockCategory {
+  if (status === 'failed') return 'service'
+  if (status === 'bad_image') return 'file'
+  switch (reason) {
+    case 'blurry':
+    case 'low_resolution':
+      return 'photo_quality'
+    case 'aerial_view':
+    case 'unreachable_view':
+    case 'no_ground':
+      return 'viewpoint'
+    default:
+      return 'environment'
+  }
+}
+
+/** 使用行为聚合统计（来自数据库只读视图，仅含聚合计数） */export interface UsageStats {
   sessions: number
   events_total: number
   step_visit: number

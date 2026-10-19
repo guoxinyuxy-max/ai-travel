@@ -73,6 +73,8 @@ const SYSTEM_PROMPT = `你是一位面向普通旅行者的 AI 拍摄指导，�
   "risk_level": "high | medium | low | none，反映你推荐的站位区域本身的人身安全风险（车辆/坠落/落水）",
   "hazard": "none | road | cliff | water | crowd，画面中与本次拍摄直接相关的风险类型：road=推荐站位在车道/路肩/斑马线或紧邻机动车道且画面中有车辆通行；cliff=悬崖或高处边缘、护栏外；water=无护栏水边、湿滑礁石；crowd=热门机位人流密集；none=无明显风险",
   "zone": { "x": 数字, "y": 数字, "w": 数字, "h": 数字 },
+  "altZone": { "x": 数字, "y": 数字, "w": 数字, "h": 数字 },
+  "altNote": "一句话说明什么情况下改站到备选位置",
   "personScale": 数字,
   "direction": { "x": 数字, "y": 数字, "rotate": 数字 },
   "modeText": "一行中文，说明已结合的拍摄条件",
@@ -95,6 +97,11 @@ const SYSTEM_PROMPT = `你是一位面向普通旅行者的 AI 拍摄指导，�
   - 距离镜头越远、脚部位置在画面中越靠上，人物在画面中越小：近景（人物 3 米内）视觉高度约占画面高度 25%–40%；中景（3–8 米）约 12%–22%；远景（8–20 米）约 6%–12%；更远约 3%–6%。
   - 广角、俯拍、大场景照片里人物通常很小，不要因为"主角要突出"就放大站位框。
   - 同时输出 personScale：人物在该位置的视觉高度占画面高度的百分比（数字，3–45），它应与 zone.h 基本一致。
+- 备选站位（altZone / altNote，可选但建议给出）：现场首选位置可能被人占用、站不下、逆光或被临时围挡，请给出一个**同样可站、可到、安全**的第二落点。
+  - 与 zone 明显分开：两者中心点横向或纵向至少相差 8 个百分点，且不要大面积重叠（重叠不超过 1/3）；
+  - 同样必须满足「可站立 + 可到达 + 不落在车道/水面/悬崖」；若画面的第二落点也不安全，宁可省略 altZone，不要凑一个；
+  - altNote 用一句话说明何时改站这里（如"被拍摄者站满时，可退到右侧平台同一朝向"），不超过 20 字；
+  - altZone 的尺寸同样要符合透视（远小近大），不要与 zone 用同一尺寸。
 - 安全判定（重要）：必须结合画面中可见的真实风险判断 hazard 与 risk_level。核心原则：只有「人物站的位置本身不能正常站立、站上去就有危险」才判高风险；「位置附近有危险元素但站位本身是正常步道/广场/平台」属于最常见的旅行拍照场景，一律判 none，用 notices 提醒即可。对 hazard 拿不准时输出 none。
   - hazard=road、risk_level=high 仅当：站位落在机动车道、路肩停车带、斑马线上，或与行车道之间没有任何人行道/绿化带/护栏隔离且紧贴车道。站位在人行道、观景平台、有隔离的步道 → 判 none；
   - hazard=cliff、risk_level=high 仅当：站位本身在悬崖、高处边缘、护栏外侧；
@@ -131,6 +138,8 @@ interface RawResult {
   hazard?: string
   personScale?: unknown
   zone?: Record<string, unknown>
+  altZone?: Record<string, unknown>
+  altNote?: unknown
   direction?: Record<string, unknown>
   modeText?: string
   advice?: Record<string, unknown>
@@ -234,13 +243,27 @@ async function analyzeWithAI(
   if (zone) zone = await fitPerspective(photo.dataUrl, zone, normalizePersonScale(raw.personScale))
   if (zone && !isPlausibleZone(zone)) zone = undefined
 
+  // 备选站位（v1.6）：同样做透视修正与合理性校验；
+  // 与首选区域大面积重叠的视为无效（那不是"备选"，是同一个位置）。
+  let altZone = normalizeZone(raw.altZone)
+  if (altZone)
+    altZone = await fitPerspective(photo.dataUrl, altZone, normalizePersonScale(raw.personScale))
+  if (altZone && !isPlausibleZone(altZone)) altZone = undefined
+  if (altZone && zone && zoneOverlap(altZone, zone) > 0.34) altZone = undefined
+  let altAccepted: Zone | undefined
+
   // 第三层：站位区域二次校验（独立轻量调用）
   // 拦三类明显异常：悬空（不可站）、不可达（从机位走不到）、危险位置（可站但不该站）。
   // 首次被拦时做一次轻量重试：只让模型重新给站位框，不重跑整套方案（约 2-3s）；
   // 重试后仍未通过，才按校验结论降级。
   let verifyUncertain = false // 校验器拿不准 / 通道失败 → 放行但强制降级
   if (zone) {
-    let verdict = await verifyZone(photo.dataUrl, zone)
+    // 首选与备选并行校验（顺序校验会额外多等 1.5–2s）
+    const [firstVerdict, altVerdict] = await Promise.all([
+      verifyZone(photo.dataUrl, zone),
+      altZone ? verifyZone(photo.dataUrl, altZone) : Promise.resolve(null),
+    ])
+    let verdict = firstVerdict
     if (!verdict.standable || !verdict.reachable || verdict.safe === 'veto') {
       const why = !verdict.standable
         ? `站位区域（x=${zone.x}, y=${zone.y}, w=${zone.w}, h=${zone.h}）人物无法站立（${verdict.note ?? '位置悬空'}）`
@@ -253,6 +276,20 @@ async function analyzeWithAI(
         verdict = await verifyZone(photo.dataUrl, fixed)
       }
     }
+    // 备选站位的取舍：必须独立通过校验（可站、可到、非一票否决、结论确定），
+    // 且与最终首选区域不重叠，才允许下发。宁可没有备选，也不给一个站不上的备选。
+    // 例外：主模型判定画面有车辆通行（hazard=road）时不下发备选——
+    // 回归实测发现备选框容易被放到路面上（校验器漏判），这类场景宁缺毋滥。
+    if (altZone && altVerdict) {
+      const altOk =
+        hazard !== 'road' &&
+        altVerdict.standable &&
+        altVerdict.reachable &&
+        altVerdict.safe !== 'veto' &&
+        altVerdict.certain
+      if (altOk && zoneOverlap(altZone, zone) <= 0.34) altAccepted = altZone
+    }
+
     if (!verdict.standable) {
       return needsNewPhotoResult('no_ground')
     }
@@ -294,6 +331,8 @@ async function analyzeWithAI(
         modeText:
           typeof raw.modeText === 'string' && raw.modeText ? raw.modeText : defaultModeText(mode),
         zone,
+        altZone: altAccepted,
+        altNote: altAccepted ? normalizeAltNote(raw.altNote) : undefined,
         direction: normalizeDirection(raw.direction),
         advice,
         notices: notices.length ? notices : undefined,
@@ -359,6 +398,8 @@ async function analyzeWithAI(
     modeText:
       typeof raw.modeText === 'string' && raw.modeText ? raw.modeText : defaultModeText(mode),
     zone,
+    altZone: altAccepted,
+    altNote: altAccepted ? normalizeAltNote(raw.altNote) : undefined,
     direction: normalizeDirection(raw.direction),
     advice,
     notices: notices.length ? notices : undefined,
@@ -532,6 +573,25 @@ function isPlausibleZone(z: Zone): boolean {
   return true
 }
 
+/** 两个站位框的重叠度：交叠面积 ÷ 较小框面积（0–1），用于判断备选是否真的是"另一个位置" */
+function zoneOverlap(a: Zone, b: Zone): number {
+  const x1 = Math.max(a.x, b.x)
+  const y1 = Math.max(a.y, b.y)
+  const x2 = Math.min(a.x + a.w, b.x + b.w)
+  const y2 = Math.min(a.y + a.h, b.y + b.h)
+  if (x2 <= x1 || y2 <= y1) return 0
+  const inter = (x2 - x1) * (y2 - y1)
+  const minArea = Math.min(a.w * a.h, b.w * b.h)
+  return minArea > 0 ? inter / minArea : 0
+}
+
+/** 备选站位的场景说明：去空、限长，避免模型输出长段落把标注区撑开 */
+function normalizeAltNote(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const text = v.trim().replace(/[。.]$/, '')
+  return text ? text.slice(0, 24) : undefined
+}
+
 function normalizeConfidence(v: unknown): 'high' | 'medium' | 'low' {
   return v === 'medium' || v === 'low' ? v : 'high'
 }
@@ -671,8 +731,9 @@ safe 三档判定（核心原则：warn 与 veto 的边界 = 区域内是否还�
 - "warn"：区域内可以正常站立，但紧邻危险元素——旁边车道有车辆通行、紧邻无护栏水边、靠近高处边缘。沿湖/沿海的步道、岸堤、广场（平整硬化地面）即使没有护栏、旁边就是水面，最高只判 warn，禁止判 veto；人行道、观景平台即使旁边有马路，最高只判 warn；
 - "ok"：与危险元素有明确隔离或距离较远的正常拍摄位置。
 sure：仅当判定都非常有把握时输出 true；有任何疑虑输出 false。
+path（必填）：用一句中文（25 字以内）描述"从拍摄这张照片的机位出发，怎么走到这个区域"，必须是一条具体可执行的路线（例："沿画面左下的石板路向右前方走 3 米"）。若中间隔着水面、机动车道、围栏、栏杆、玻璃、深沟或明显落差而走不过去，reachable 必须为 false；若你说不出一条具体路线，也必须有 reachable=false，不允许凭想象判可达。
 正常照片（人物将站在靠近镜头的前景地面附近）一律 standable=true、reachable=true、safe="ok"、sure=true。
-只输出 JSON：{"standable": true, "reachable": true, "safe": "ok", "sure": true, "reason": "10字以内原因"}`,
+只输出 JSON：{"standable": true, "reachable": true, "safe": "ok", "sure": true, "path": "从前景沿步道向前走 2 米", "reason": "10字以内原因"}`,
         },
         {
           role: 'user',
@@ -698,12 +759,26 @@ sure：仅当判定都非常有把握时输出 true；有任何疑虑输出 fals
       safe?: unknown
       sure?: unknown
       reason?: unknown
+      path?: unknown
     }
     const note = typeof j.reason === 'string' && j.reason.trim() ? j.reason.trim() : undefined
-    const sure = j.sure !== false
+    const path = typeof j.path === 'string' ? j.path.trim() : ''
+    // 路径里出现明确的阻隔描述，即使模型嘴上说 reachable=true，也按不可达处理
+    const pathBlocked = /隔着|无法通行|无法通过|过不去|走不到|不可达|被(拦|阻)/.test(path)
+    let sure = j.sure !== false
     // 只有明确 false 才拦截 standable/reachable；safe 按三档处理
     if (j.standable === false) return { standable: false, reachable: false, safe: 'veto', certain: true, note }
-    if (j.reachable === false) return { standable: true, reachable: false, safe: 'ok', certain: true, note }
+    if (j.reachable === false || pathBlocked) {
+      return {
+        standable: true,
+        reachable: false,
+        safe: 'ok',
+        certain: true,
+        note: note ?? (path || '说不出可行的走位路线'),
+      }
+    }
+    // 说不出具体路线 → 可达性无法确认，放行但强制降级为保守建议
+    if (!path) sure = false
     // veto 必须是"有把握"的结论：模型自己拿不准的 veto 降级为 warn（宁提醒、不误杀正常场景）
     let safe: SafeLevel = j.safe === 'veto' || j.safe === 'warn' ? j.safe : 'ok'
     if (safe === 'veto' && !sure) safe = 'warn'

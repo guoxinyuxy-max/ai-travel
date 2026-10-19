@@ -13,6 +13,8 @@ export type HighlightPart = 'zone' | 'lines' | null
 interface Props {
   src: string
   zone?: Zone
+  /** 备选站位（首选被占用/站不下时改站这里），以细虚线框呈现 */
+  altZone?: Zone
   showLegend?: boolean
   /** 站位框形态：normal 常规；uncertain 虚线弱化（低置信）；danger 红色虚线（未验证安全） */
   variant?: ZoneVariant
@@ -31,6 +33,7 @@ interface Props {
 export function AnnotatedPhoto({
   src,
   zone,
+  altZone,
   showLegend = true,
   variant = 'normal',
   highlight = null,
@@ -120,6 +123,33 @@ export function AnnotatedPhoto({
           </div>
         )}
 
+        {/* 备选站位：细虚线框 + 「备选」小标签，与首选同属「人物站位」部件 */}
+        {altZone && variant !== 'danger' && (
+          <div
+            className={cn(
+              'absolute rounded-xl border border-dashed border-white/70 bg-white/5 transition-all duration-300',
+              dim('zone') && 'opacity-25',
+              highlight === 'zone' && 'border-white/90 bg-white/10',
+            )}
+            style={{
+              left: `${altZone.x}%`,
+              top: `${altZone.y}%`,
+              width: `${altZone.w}%`,
+              height: `${altZone.h}%`,
+            }}
+          >
+            <span
+              className={cn(
+                'absolute right-1 rounded-full px-1.5 py-0.5 text-[9px] whitespace-nowrap transition-all duration-300',
+                altZone.y < 8 ? 'top-0.5' : '-top-2.5',
+                highlight === 'zone' ? 'bg-white text-ink-900' : 'bg-black/45 text-white/90',
+              )}
+            >
+              备选
+            </span>
+          </div>
+        )}
+
         {/* 高亮态提示浮层 */}
         {anyHighlight && (
           <div className="pointer-events-none absolute top-2.5 left-2.5 rounded-full bg-black/55 px-2.5 py-1 text-[11px] text-white">
@@ -132,6 +162,7 @@ export function AnnotatedPhoto({
       {showLegend && (
         <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1 px-0.5 text-xs text-ink-500">
           <LegendItem label="人物推荐区域" active={highlight === 'zone'} />
+          {altZone && <LegendItem label="备选站位" dashed active={highlight === 'zone'} />}
           <LegendItem label="构图参考线" dashed active={highlight === 'lines'} />
         </div>
       )}

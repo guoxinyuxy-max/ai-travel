@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { analyzeEnvironment, type AnalysisStage } from '@/data/ai'
-import { track } from '@/data/analytics'
+import { blockCategoryOf, track } from '@/data/analytics'
 import { useDemoStore } from '@/data/store'
 import { DIRECTION_LABELS, type DirectionId } from '@/data/types'
 import { cn } from '@/lib/cn'
@@ -50,7 +50,15 @@ export function Analysis() {
         track(blocked ? 'analyze_blocked' : 'analyze_ok', {
           mode,
           source: result.source,
-          meta: { status: result.status, direction: dir ?? undefined },
+          // 被拦截时记录细分原因与归类，用于统计"哪一类拦截最多、误拦多少"
+          meta: blocked
+            ? {
+                status: result.status,
+                reason: result.reason,
+                category: blockCategoryOf(result.status, result.reason),
+                direction: dir ?? undefined,
+              }
+            : { status: result.status, direction: dir ?? undefined },
         })
         setTimeout(() => {
           if (!cancelled) navigate(blocked ? '/image-error' : '/result')

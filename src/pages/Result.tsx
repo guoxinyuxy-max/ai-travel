@@ -205,6 +205,7 @@ export function Result() {
             <AnnotatedPhoto
               src={photo.dataUrl}
               zone={result.zone}
+              altZone={result.altZone}
               variant={result.status === 'limited_uncertain' ? 'uncertain' : 'normal'}
               highlight={highlight}
             />
@@ -246,6 +247,15 @@ export function Result() {
                     )}
                   </span>
                   <p className="mt-2 text-sm leading-relaxed">{c.text}</p>
+                  {c.part === 'zone' && result.altZone && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-ink-500">
+                      图中虚线框是备选站位
+                      {result.altNote
+                        ? `：${result.altNote}`
+                        : '，首选位置被占用或站不下时改站这里'}
+                      。
+                    </p>
+                  )}
                   {clickable && (
                     <p className="mt-1.5 text-xs text-ink-400">
                       {active ? '已高亮图中对应标注，再点一下取消' : '点击可在图上高亮对应标注'}

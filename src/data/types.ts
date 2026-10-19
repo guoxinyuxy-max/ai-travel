@@ -107,6 +107,14 @@ export interface AnalysisResult {
   hint?: string
   modeText?: string
   zone?: Zone
+  /**
+   * 备选站位（v1.6）：
+   * 首选位置被占用、站不下、逆光或现场不可达时的第二选择。
+   * 与 zone 一样经过透视修正和可达/安全检查，未通过校验时不下发。
+   */
+  altZone?: Zone
+  /** 备选站位的场景化说明（如「台阶被占时退到右侧平台」）；缺省用通用文案 */
+  altNote?: string
   direction?: DirectionHint
   advice?: Advice
   /** 安全 / 注意事项提示（limited_safety 为红卡，其余为普通提示条） */
