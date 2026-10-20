@@ -144,15 +144,21 @@ export function ImageError() {
       <div className="mt-5 space-y-2.5">
         {retryable ? (
           <>
-            <Button onClick={() => navigate('/analysis')}>重试分析</Button>
+            <Button onClick={() => navigate('/analysis', { replace: true })}>重试分析</Button>
             <Button variant="secondary" onClick={() => navigate('/task')}>
               更换照片
             </Button>
           </>
         ) : (
           <>
-            <Button onClick={() => navigate('/task')}>重新拍摄</Button>
-            <Button variant="secondary" onClick={() => navigate('/task')}>
+            {/* 两个按钮分别直达相机/相册，不再是同一个去处 */}
+            <Button onClick={() => navigate('/task', { state: { open: 'camera' } })}>
+              重新拍摄
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/task', { state: { open: 'gallery' } })}
+            >
               从相册选择
             </Button>
           </>
@@ -211,7 +217,7 @@ function BlockFeedback({ category, result }: { category: BlockCategory; result: 
           确实分析不了
         </button>
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-ink-400">
+      <p className="mt-2 text-[11px] leading-relaxed text-ink-500">
         只记录你的判断，不会上传或保存这张照片。
       </p>
     </div>

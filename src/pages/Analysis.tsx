@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { analyzeEnvironment, type AnalysisStage } from '@/data/ai'
 import { blockCategoryOf, track } from '@/data/analytics'
 import { useDemoStore } from '@/data/store'
@@ -13,10 +13,13 @@ const STAGE_STEP: Record<AnalysisStage, number> = { env: 0, verify: 1, compose: 
 
 export function Analysis() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [step, setStep] = useState(0) // 进行中的步骤下标；3 = 全部完成
   const [direction, setDirection] = useState<DirectionId | null>(null)
   // 取消埋点用：跟随渲染的 step 之外再留一份，避免闭包拿到旧值
   const stepRef = useRef(0)
+  // 是否是"直接打开本页"（深链/刷新）：此时历史栈里没有上一页
+  const isEntry = useRef(location.key === 'default')
 
   useEffect(() => {
     const { photo, mode, direction: dir } = useDemoStore.getState()
@@ -61,11 +64,12 @@ export function Analysis() {
             : { status: result.status, direction: dir ?? undefined },
         })
         setTimeout(() => {
-          if (!cancelled) navigate(blocked ? '/image-error' : '/result')
+          // replace：分析页不留在历史栈里，否则从结果页返回会落回本页并重跑一次分析
+          if (!cancelled) navigate(blocked ? '/image-error' : '/result', { replace: true })
         }, 450)
       })
       .catch(() => {
-        if (!cancelled) navigate('/image-error')
+        if (!cancelled) navigate('/image-error', { replace: true })
       })
 
     return () => {
@@ -101,7 +105,7 @@ export function Analysis() {
               <span className={cn('w-5 text-center', done || active ? 'text-primary' : 'text-ink-300')}>
                 {done ? '✓' : active ? '●' : '○'}
               </span>
-              <span className={cn('text-sm', done && 'text-ink-900', active && 'font-medium', !done && !active && 'text-ink-400')}>
+              <span className={cn('text-sm', done && 'text-ink-900', active && 'font-medium', !done && !active && 'text-ink-500')}>
                 {label}
               </span>
             </div>
@@ -117,9 +121,11 @@ export function Analysis() {
             mode: useDemoStore.getState().mode ?? undefined,
             meta: { stage: stepRef.current },
           })
-          navigate('/task')
+          // 回退而不是 push：分析页不进历史栈，否则再从任务页返回会回到这里重跑一次分析
+          if (isEntry.current) navigate('/task', { replace: true })
+          else navigate(-1)
         }}
-        className="mt-8 min-h-11 rounded-full px-6 text-sm text-ink-400 underline underline-offset-2 transition hover:text-ink-700"
+        className="mt-8 min-h-11 rounded-full px-6 text-sm text-ink-500 underline underline-offset-2 transition hover:text-ink-900"
       >
         取消分析，返回任务页
       </button>

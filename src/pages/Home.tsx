@@ -40,10 +40,10 @@ export function Home() {
           <div key={s.title} className="rounded-card bg-ink-100 p-3">
             <span className="text-lg">{s.emoji}</span>
             <b className="mt-1 block text-xs">
-              <span className="mr-1 text-ink-400">{i + 1}</span>
+              <span className="mr-1 text-ink-500">{i + 1}</span>
               {s.title}
             </b>
-            <small className="mt-0.5 block text-[11px] leading-snug text-ink-400">{s.desc}</small>
+            <small className="mt-0.5 block text-[11px] leading-snug text-ink-500">{s.desc}</small>
           </div>
         ))}
       </div>

@@ -96,17 +96,34 @@ export function Result() {
       const how = await shareOrDownload(blob)
       setTip(how === 'shared' ? '分享卡片已生成' : '分享卡片已保存到下载')
       track('plan_shared', { mode })
-    } catch {
+    } catch (err) {
+      // 用户在系统分享面板里点了取消：不是故障，静默返回，也不计入分享数
+      const name = (err as DOMException | undefined)?.name
+      if (name === 'AbortError' || name === 'NotAllowedError') {
+        setTip(null)
+        return
+      }
       setTip('卡片生成失败，请重试')
     } finally {
       setSharing(false)
     }
   }
 
+  /** 建议卡 ↔ 标注联动：同一个部件再点一次取消高亮 */
+  const togglePart = (part: Exclude<HighlightPart, null>) => {
+    const next = highlight === part ? null : part
+    setHighlight(next)
+    // 只看选中（点开）这一次，衡量图文联动是否被理解和使用
+    if (next) {
+      track('plan_card_highlight', { mode: mode ?? undefined, meta: { part: next } })
+    }
+  }
+
   const handleDirection = (d: DirectionId) => {
     track('regenerate', { mode: mode ?? undefined, meta: { direction: d } })
     useDemoStore.getState().setDirection(d)
-    navigate('/analysis')
+    // replace：换方向是"重算当前结果"，不该在历史栈里堆一层结果页
+    navigate('/analysis', { replace: true })
   }
 
   /** 再来一张：保留拍摄方式，换环境照片（快速连拍的闭环） */
@@ -192,7 +209,7 @@ export function Result() {
       {!isSafety && (
         <>
           <h2 className="text-2xl font-bold">推荐拍摄方案</h2>
-          <p className="mt-1 text-[13px] text-ink-400">
+          <p className="mt-1 text-[13px] text-ink-500">
             {result.modeText}
             {result.planDirection && (
               <span className="ml-2 rounded-full bg-ink-100 px-2 py-0.5 text-xs text-ink-500">
@@ -219,31 +236,32 @@ export function Result() {
               return (
                 <div
                   key={c.tag}
-                  onClick={
+                  // 可交互卡片用 role="button" 而非 <button>：卡内含 <p>，<button> 里嵌段落是非法结构
+                  role={clickable ? 'button' : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  aria-pressed={clickable ? active : undefined}
+                  onClick={clickable ? () => togglePart(c.part!) : undefined}
+                  onKeyDown={
                     clickable
-                      ? () => {
-                          const next = active ? null : c.part
-                          setHighlight(next)
-                          // 只看选中（点开）这一次，衡量图文联动是否被理解和使用
-                          if (next) {
-                            track('plan_card_highlight', {
-                              mode: mode ?? undefined,
-                              meta: { part: next },
-                            })
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            togglePart(c.part!)
                           }
                         }
                       : undefined
                   }
                   className={cn(
                     'rounded-card bg-ink-100 p-4 transition-colors',
-                    clickable && 'cursor-pointer hover:bg-ink-150',
+                    clickable &&
+                      'cursor-pointer hover:bg-ink-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                     active && 'bg-white ring-2 ring-primary',
                   )}
                 >
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-200 px-2.5 py-1 text-xs">
                     {c.tag}
                     {clickable && (
-                      <Eye className={cn('size-3', active ? 'text-primary' : 'text-ink-400')} />
+                      <Eye className={cn('size-3', active ? 'text-primary' : 'text-ink-500')} />
                     )}
                   </span>
                   <p className="mt-2 text-sm leading-relaxed">{c.text}</p>
@@ -257,7 +275,7 @@ export function Result() {
                     </p>
                   )}
                   {clickable && (
-                    <p className="mt-1.5 text-xs text-ink-400">
+                    <p className="mt-1.5 text-xs text-ink-500">
                       {active ? '已高亮图中对应标注，再点一下取消' : '点击可在图上高亮对应标注'}
                     </p>
                   )}
@@ -289,7 +307,7 @@ export function Result() {
           {/* 保守方案的重新分析 */}
           {result.status === 'limited_uncertain' && (
             <button
-              onClick={() => navigate('/analysis')}
+              onClick={() => navigate('/analysis', { replace: true })}
               className="mt-3 inline-flex min-h-10 items-center gap-1.5 text-[13px] font-medium text-ink-500 underline underline-offset-2"
             >
               <RotateCcw className="size-3.5" />
@@ -305,7 +323,7 @@ export function Result() {
           <h2 className="text-2xl font-bold">
             {result.hazard ? '不建议在此拍照' : '场景需要注意安全'}
           </h2>
-          {result.modeText && <p className="mt-1 text-[13px] text-ink-400">{result.modeText}</p>}
+          {result.modeText && <p className="mt-1 text-[13px] text-ink-500">{result.modeText}</p>}
           <div className="mt-4 rounded-card border border-danger-border bg-danger-soft p-4">
             <b className="flex items-center gap-1.5 text-[15px] text-danger-text">
               <TriangleAlert className="size-4" />
@@ -340,7 +358,7 @@ export function Result() {
       {!isSafety && (
         <div className="mt-5 rounded-card border border-ink-200 p-4">
           <b className="text-sm">不满意？换个方向试试</b>
-          <p className="mt-1 text-xs text-ink-400">
+          <p className="mt-1 text-xs text-ink-500">
             保持当前环境分析，按新方向重新生成建议，无需重新上传照片。
           </p>
           <div className="mt-2.5 grid grid-cols-3 gap-2">
@@ -362,7 +380,7 @@ export function Result() {
         </div>
       )}
 
-      <p className="mt-3 px-0.5 text-xs text-ink-400">
+      <p className="mt-3 px-0.5 text-xs text-ink-500">
         {result.source === 'ai'
           ? '本次建议由 AI 结合照片内容与摄影规则生成，仅供参考。'
           : '本次建议由内置摄影规则引擎结合照片特征生成，仅供参考。'}
@@ -402,7 +420,7 @@ function ZoneReachFeedback({ status, mode }: { status: string; mode: Mode }) {
 
   if (vote) {
     return (
-      <p className="text-xs text-ink-400">
+      <p className="text-xs text-ink-500">
         已记录，感谢反馈。
         {vote === 'no' && '可点击下方「换个方向试试」重新生成，或更换环境照片。'}
       </p>

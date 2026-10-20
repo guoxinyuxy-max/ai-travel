@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Camera, Image as ImageIcon, Lock } from 'lucide-react'
 import type { PhotoInput } from '@/data/types'
 import { fileToCompressedDataUrl } from '@/lib/image'
@@ -6,15 +6,25 @@ import { fileToCompressedDataUrl } from '@/lib/image'
 interface Props {
   photo: PhotoInput | null
   onPhoto: (p: PhotoInput) => void
+  /** 进入页面即打开相机/相册（拦截页的「重新拍摄 / 从相册选择」带过来） */
+  autoOpen?: 'camera' | 'gallery'
 }
 
 /**
  * 环境照片上传区。
  * 「拍摄现场照片」使用 capture 属性在移动端直接调起相机；PC 端两者均打开文件选择。
  */
-export function UploadBox({ photo, onPhoto }: Props) {
+export function UploadBox({ photo, onPhoto, autoOpen }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
+
+  // 自动调起：延迟一点等页面过渡结束；浏览器若拦截无手势的 click，用户仍在页面上可手动点
+  useEffect(() => {
+    if (!autoOpen) return
+    const target = autoOpen === 'camera' ? cameraRef : galleryRef
+    const timer = setTimeout(() => target.current?.click(), 320)
+    return () => clearTimeout(timer)
+  }, [autoOpen])
 
   const handleFile = async (file: File | undefined, source: PhotoInput['source']) => {
     if (!file) return
@@ -76,7 +86,7 @@ export function UploadBox({ photo, onPhoto }: Props) {
       <p className="mt-2.5 text-[13px] leading-relaxed text-ink-500">
         尽量拍到完整景点主体和周围空间，便于 AI 判断站位和构图。
       </p>
-      <p className="mt-1 flex items-start gap-1 text-[13px] text-ink-400">
+      <p className="mt-1 flex items-start gap-1 text-[13px] text-ink-500">
         <Lock className="mt-0.5 size-3.5 shrink-0" />
         上传照片仅用于当前拍摄任务分析，请避免上传包含敏感个人信息的图片。
       </p>
