@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Camera, Image as ImageIcon, Lock } from 'lucide-react'
 import type { PhotoInput } from '@/data/types'
 import { fileToCompressedDataUrl } from '@/lib/image'
@@ -18,13 +18,17 @@ export function UploadBox({ photo, onPhoto, autoOpen }: Props) {
   const cameraRef = useRef<HTMLInputElement>(null)
   const galleryRef = useRef<HTMLInputElement>(null)
 
+  // 只认挂载那一刻的 autoOpen：任务页读到 state 后会立刻清掉 history state（防返回时重复弹起），
+  // 不能让随后的 prop 变化取消已排定的调起
+  const [pendingOpen] = useState(autoOpen)
+
   // 自动调起：延迟一点等页面过渡结束；浏览器若拦截无手势的 click，用户仍在页面上可手动点
   useEffect(() => {
-    if (!autoOpen) return
-    const target = autoOpen === 'camera' ? cameraRef : galleryRef
+    if (!pendingOpen) return
+    const target = pendingOpen === 'camera' ? cameraRef : galleryRef
     const timer = setTimeout(() => target.current?.click(), 320)
     return () => clearTimeout(timer)
-  }, [autoOpen])
+  }, [pendingOpen])
 
   const handleFile = async (file: File | undefined, source: PhotoInput['source']) => {
     if (!file) return

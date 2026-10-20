@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { UploadBox } from '@/components/UploadBox'
 import { Button } from '@/components/ui/Button'
@@ -27,6 +28,12 @@ export function Task() {
 
   const ready = Boolean(photo && mode)
   const autoOpen = (location.state as { open?: 'camera' | 'gallery' } | null)?.open
+
+  // history state 是一次性的意图：读到后立刻清掉。
+  // 否则凡是回到这条历史记录（比如分析页点「取消分析」返回），都会再自动弹一次相机/相册。
+  useEffect(() => {
+    if (autoOpen) navigate('/task', { replace: true })
+  }, [autoOpen, navigate])
 
   const generate = () => {
     if (!ready) return
